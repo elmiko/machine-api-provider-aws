@@ -98,7 +98,12 @@ func (h *handler) run(ctx context.Context, imdsClient *ec2metadata.EC2Metadata, 
 	logger := h.log.WithValues("node", h.nodeName)
 	logger.V(1).Info("Monitoring node termination")
 
-	if err := wait.PollImmediateUntil(h.pollInterval, func() (bool, error) {
+	if err := wait.PollUntilContextCancel(ctx, h.pollInterval, true, func(ctx context.Context) (bool, error) {
+		if err := ctx.Err(); err != nil {
+			logger.V(2).Info("Termination handler context canceled")
+			return false, nil
+		}
+
 		// code below mostly replicates GetMetadataWithContext method of the imdsClient.
 		// https://github.com/aws/aws-sdk-go/blob/v1.43.20/aws/ec2metadata/api.go#L61
 		// Since it's not possible to reliably extract information from result of such function, manual request prep
@@ -123,7 +128,7 @@ func (h *handler) run(ctx context.Context, imdsClient *ec2metadata.EC2Metadata, 
 		}
 		// successful request, instance marked for termination. Done here.
 		return true, nil
-	}, ctx.Done()); err != nil {
+	}); err != nil {
 		return fmt.Errorf("error polling termination endpoint: %v", err)
 	}
 
